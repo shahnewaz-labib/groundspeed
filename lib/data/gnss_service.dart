@@ -147,7 +147,7 @@ class GnssService extends ChangeNotifier {
         return;
       }
 
-      final serviceEnabled = await Geolocator.isLocationServicesEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         _setPhase(GnssPhase.serviceOff);
         return;
