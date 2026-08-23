@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.location.GnssStatus
 import android.location.LocationManager
+import android.location.OnNmeaMessageListener
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
@@ -15,7 +16,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var locationManager: LocationManager? = null
     private var gnssCallback: GnssStatus.Callback? = null
-    private var nmeaListener: LocationManager.OnNmeaMessageListener? = null
+    private var nmeaListener: OnNmeaMessageListener? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -91,12 +92,12 @@ class MainActivity : FlutterActivity() {
                     val lm = applicationContext
                         .getSystemService(LOCATION_SERVICE) as LocationManager
                     val listener =
-                        LocationManager.OnNmeaMessageListener { message, _ ->
+                        OnNmeaMessageListener { message, _ ->
                             mainHandler.post { events.success(message) }
                         }
                     nmeaListener = listener
                     try {
-                        lm.addNmeaMessageListener(listener, mainHandler)
+                        lm.addNmeaListener(listener, mainHandler)
                     } catch (_: SecurityException) {
                         events.error("REGISTER_FAILED", "NMEA registration failed", null)
                     }
@@ -122,7 +123,7 @@ class MainActivity : FlutterActivity() {
     private fun unregisterNmea() {
         val listener = nmeaListener ?: return
         try {
-            locationManager?.removeNmeaMessageListener(listener)
+            locationManager?.removeNmeaListener(listener)
         } catch (_: Exception) {
             // Manager already torn down.
         }
