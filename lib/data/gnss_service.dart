@@ -416,7 +416,9 @@ class GnssService extends ChangeNotifier {
             final total = (event['total'] as num?)?.toInt() ?? 0;
             final rawSats = event['sats'];
             final sats = rawSats is List
-                ? rawSats.map(SatelliteInfo.fromMap).toList()
+                ? rawSats
+                      .map((s) => SatelliteInfo.fromMap(s))
+                      .toList()
                 : <SatelliteInfo>[];
             _snapshot = _snapshot.copyWith(
               satsUsed: used,

@@ -94,6 +94,10 @@ class StoredSession {
   final double maxSpeedMps;
   final int pointCount;
 
+  /// Space-derived average while moving, m/s.
+  double get avgMovingSpeedMps =>
+      moveSeconds > 0 ? distanceM / moveSeconds : 0;
+
   Map<String, Object?> toJson() => <String, Object?>{
         'file': file,
         'name': name,

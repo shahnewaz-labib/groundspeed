@@ -59,7 +59,7 @@ class _HeadingRingPainter extends CustomPainter {
     );
 
     // Ticks every 15°, stronger every 45°.
-    for (var deg = 0; deg < 360; deg += 15) {
+    for (var deg = 0.0; deg < 360; deg += 15) {
       if (!_withinSweep(deg)) continue;
       final major = deg % 45 == 0;
       final tickPaint = Paint()
@@ -67,16 +67,16 @@ class _HeadingRingPainter extends CustomPainter {
         ..color = major ? GsColors.inkFaint : GsColors.hairline;
       final dir = _unitVector(deg);
       canvas.drawLine(
-        center + dir * (radius - (major ? 12 : 7)),
+        center + dir * (radius - (major ? 12.0 : 7.0)),
         center + dir * radius,
         tickPaint,
       );
     }
 
     // Cardinal letters.
-    const labels = {0: 'N', 90: 'E', 180: 'S', 270: 'W'};
+    const labels = {0.0: 'N', 90.0: 'E', 180.0: 'S', 270.0: 'W'};
     for (final entry in labels.entries) {
-      final deg = entry.key.toDouble();
+      final deg = entry.key;
       if (!_withinSweep(deg)) continue;
       final dir = _unitVector(deg);
       final pos = center + dir * (radius - 26);
@@ -84,7 +84,7 @@ class _HeadingRingPainter extends CustomPainter {
         text: TextSpan(
           text: entry.value,
           style: TextStyle(
-            fontSize: deg % 90 == 0 && deg == 0 ? 13 : 11,
+            fontSize: deg == 0 ? 13.0 : 11.0,
             fontWeight: FontWeight.w600,
             color: deg == 0 ? GsColors.accent : GsColors.inkDim,
           ),

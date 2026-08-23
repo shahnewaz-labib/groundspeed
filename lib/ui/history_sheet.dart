@@ -138,7 +138,7 @@ class _HistorySheetState extends State<_HistorySheet> {
                     return ListView.separated(
                       padding: const EdgeInsets.only(top: 4, bottom: 8),
                       itemCount: sessions.length,
-                      separatorBuilder: (_, _) =>
+                      separatorBuilder: (_, __) =>
                           Container(height: 1, color: GsColors.hairline),
                       itemBuilder: (context, i) =>
                           _row(context, sessions[i]),
