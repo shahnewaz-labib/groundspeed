@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Build & publish release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Scaffold platform projects (generated in CI, never locally)
+        run: flutter create . --platforms android,ios --org com.shahnewaz --project-name groundspeed
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Ensure signing keystore exists
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "cn=Android Debug,o=Android,c=US"
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Collect artifacts + checksum
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          cp build/app/outputs/flutter-apk/app-release.apk "groundspeed-${TAG}.apk"
+          shasum -a 256 "groundspeed-${TAG}.apk" > "groundspeed-${TAG}.apk.sha256"
+          echo "Built $(cat "groundspeed-${TAG}.apk.sha256")"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          APK="groundspeed-${TAG}.apk"
+          SUM="${APK}.sha256"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" "$SUM" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SUM" \
+              --title "Groundspeed $TAG" \
+              --notes "Precision GNSS ground-speed instrument.
+
+              **Install:** sideload \`$APK\`, grant precise location, stand under open sky.
+              Verify integrity with \`$SUM\` (SHA-256).
+              Built by GitHub Actions from tag \`$TAG\`."
+          fi
