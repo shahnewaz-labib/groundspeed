@@ -46,7 +46,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('72.0'), findsOneWidget);
-    expect(find.text('KM/H'), findsOneWidget);
+    // Unit caption under the readout + selected segment in the switcher.
+    expect(find.text('KM/H'), findsNWidgets(2));
     expect(find.text('MAX'), findsOneWidget);
     expect(find.text('DIST'), findsOneWidget);
     expect(find.text('SATS'), findsOneWidget);
