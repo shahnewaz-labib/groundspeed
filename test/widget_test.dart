@@ -23,7 +23,8 @@ void main() {
     await tester.pumpWidget(GroundspeedApp(service: fake));
     await tester.pump();
 
-    expect(find.text('--'), findsOneWidget);
+    // Readout + MAX + DIST tiles all show placeholders before first fix.
+    expect(find.text('--'), findsNWidgets(3));
     expect(find.text('ACQUIRING SATELLITES'), findsOneWidget);
 
     // 20 m/s -> 72.0 km/h
