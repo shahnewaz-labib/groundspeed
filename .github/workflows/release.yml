@@ -33,6 +33,23 @@ jobs:
       - name: Scaffold platform projects (generated in CI, never locally)
         run: flutter create . --platforms android,ios --org com.shahnewaz --project-name groundspeed
 
+      - name: Restore signing keystore
+        env:
+          GS_KEYSTORE_BASE64: ${{ secrets.GS_KEYSTORE_BASE64 }}
+          GS_KEYSTORE_PASSWORD: ${{ secrets.GS_KEYSTORE_PASSWORD }}
+          GS_KEY_ALIAS: ${{ secrets.GS_KEY_ALIAS }}
+        run: |
+          if [ -z "$GS_KEYSTORE_BASE64" ]; then
+            echo "No signing secret present; falling back to debug signing"
+            exit 0
+          fi
+          echo "$GS_KEYSTORE_BASE64" | base64 -d > android/app/groundspeed-release.keystore
+          printf 'storeFile=groundspeed-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$GS_KEYSTORE_PASSWORD" "$GS_KEY_ALIAS" "$GS_KEYSTORE_PASSWORD" > android/key.properties
+
+      - name: Apply release signing config
+        run: python3 tool/apply_signing.py
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -54,10 +71,10 @@ jobs:
             -dname "cn=Android Debug,o=Android,c=US"
 
       - name: Build universal release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --obfuscate --split-debug-info=build/symbols
 
       - name: Build per-ABI release APKs
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols
 
       - name: Collect artifacts + checksums
         run: |
@@ -67,6 +84,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "groundspeed-${TAG}-armeabi-v7a.apk"
           shasum -a 256 "groundspeed-${TAG}-universal.apk" > "groundspeed-${TAG}-universal.apk.sha256"
           shasum -a 256 "groundspeed-${TAG}-arm64-v8a.apk" > "groundspeed-${TAG}-arm64-v8a.apk.sha256"
+          zip -qry "groundspeed-${TAG}-symbols.zip" build/symbols
 
       - name: Publish GitHub release
         env:
@@ -76,16 +94,18 @@ jobs:
           UNI="groundspeed-${TAG}-universal.apk"
           ARM="groundspeed-${TAG}-arm64-v8a.apk"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$UNI"* "$ARM"* "groundspeed-${TAG}-armeabi-v7a.apk" --clobber
+            gh release upload "$TAG" "$UNI"* "$ARM"* "groundspeed-${TAG}-armeabi-v7a.apk" "groundspeed-${TAG}-symbols.zip" --clobber
           else
             gh release create "$TAG" \
               "$ARM" "${ARM}.sha256" \
               "$UNI" "${UNI}.sha256" \
               "groundspeed-${TAG}-armeabi-v7a.apk" \
+              "groundspeed-${TAG}-symbols.zip" \
               --title "Groundspeed $TAG" \
               --notes "Precision GNSS ground-speed instrument.
 
               **Install:** sideload \`$ARM\` (any phone from ~2016 onward; smaller download) or \`$UNI\` if unsure.
-              Verify integrity with the \`.sha256\` files.
+              Verify integrity with the \`.sha256\` files. Signed with the persistent Groundspeed release key — upgrades install over previous versions.
+              \`-symbols.zip\` holds the obfuscation debug symbols; keep it if you ever need to symbolicate a crash trace.
               Built by GitHub Actions from tag \`$TAG\`."
           fi

@@ -15,6 +15,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var locationManager: LocationManager? = null
     private var gnssCallback: GnssStatus.Callback? = null
+    private var nmeaListener: LocationManager.OnNmeaMessageListener? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -74,6 +75,37 @@ class MainActivity : FlutterActivity() {
                     unregister()
                 }
             })
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, NMEA_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    if (events == null) return
+
+                    if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        events.error("PERMISSION_DENIED", "Fine location permission missing", null)
+                        return
+                    }
+
+                    val lm = applicationContext
+                        .getSystemService(LOCATION_SERVICE) as LocationManager
+                    val listener =
+                        LocationManager.OnNmeaMessageListener { message, _ ->
+                            mainHandler.post { events.success(message) }
+                        }
+                    nmeaListener = listener
+                    try {
+                        lm.addNmeaMessageListener(listener, mainHandler)
+                    } catch (_: SecurityException) {
+                        events.error("REGISTER_FAILED", "NMEA registration failed", null)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    unregisterNmea()
+                }
+            })
     }
 
     private fun constellationName(type: Int): String = when (type) {
@@ -85,6 +117,16 @@ class MainActivity : FlutterActivity() {
         GnssStatus.CONSTELLATION_SBAS -> "SBAS"
         GnssStatus.CONSTELLATION_IRNSS -> "NAVIC"
         else -> "UNKNOWN"
+    }
+
+    private fun unregisterNmea() {
+        val listener = nmeaListener ?: return
+        try {
+            locationManager?.removeNmeaMessageListener(listener)
+        } catch (_: Exception) {
+            // Manager already torn down.
+        }
+        nmeaListener = null
     }
 
     private fun unregister() {
@@ -99,10 +141,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         unregister()
+        unregisterNmea()
         super.onDestroy()
     }
 
     companion object {
         const val GNSS_CHANNEL = "groundspeed/gnss"
+        const val NMEA_CHANNEL = "groundspeed/nmea"
     }
 }

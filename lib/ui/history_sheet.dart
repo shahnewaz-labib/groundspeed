@@ -6,6 +6,7 @@ import '../core/units.dart';
 import '../data/models.dart';
 import '../data/session_store.dart';
 import 'theme.dart';
+import 'trip_detail_screen.dart';
 
 Future<void> showHistorySheet(
   BuildContext context,
@@ -163,34 +164,49 @@ class _HistorySheetState extends State<_HistorySheet> {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$dateLabel · $timeLabel',
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: GsColors.ink,
-                    fontFeatures: GsColors.tabularFigures,
+            child: InkWell(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TripDetailScreen(
+                    session: s,
+                    store: widget.store,
+                    unit: widget.unit,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${formatDistance(s.distanceM)} · '
-                  '${formatMovingTime(s.moveSeconds)} moving · '
-                  'avg ${formatSpeed(s.avgMovingSpeedMps, widget.unit)} '
-                  '${widget.unit.label.toLowerCase()} · '
-                  'max ${formatSpeed(s.maxSpeedMps, widget.unit)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: GsColors.ink.withValues(alpha: 0.45),
-                    fontFeatures: GsColors.tabularFigures,
-                  ),
+              ),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$dateLabel · $timeLabel',
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: GsColors.ink,
+                        fontFeatures: GsColors.tabularFigures,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${formatDistance(s.distanceM)} · '
+                      '${formatMovingTime(s.moveSeconds)} moving · '
+                      'avg ${formatSpeed(s.avgMovingSpeedMps, widget.unit)} '
+                      '${widget.unit.label.toLowerCase()} · '
+                      'max ${formatSpeed(s.maxSpeedMps, widget.unit)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: GsColors.ink.withValues(alpha: 0.45),
+                        fontFeatures: GsColors.tabularFigures,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           IconButton(

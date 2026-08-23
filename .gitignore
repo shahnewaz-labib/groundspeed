@@ -16,6 +16,9 @@ coverage/
 # Platforms (generated in CI)
 android/.gradle/
 android/local.properties
+android/key.properties
+android/app/groundspeed-release.keystore
+*.keystore
 ios/Pods/
 ios/.symlinks/
 ios/Flutter/ephemeral/

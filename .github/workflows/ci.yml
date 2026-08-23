@@ -47,7 +47,7 @@ jobs:
             -dname "cn=Android Debug,o=Android,c=US"
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --obfuscate --split-debug-info=build/symbols
 
       - name: Collect artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk groundspeed-release.apk
@@ -56,4 +56,10 @@ jobs:
         with:
           name: groundspeed-android
           path: groundspeed-release.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: groundspeed-obfuscation-symbols
+          path: build/symbols
           if-no-files-found: error

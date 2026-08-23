@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 
 import 'ground_speed_estimator.dart';
 import 'models.dart';
+import 'nmea.dart';
 import 'speed_filter.dart';
 
 /// High-level connection state surfaced to the UI.
@@ -42,6 +43,9 @@ class GnssSnapshot {
     this.avgMovingSpeedMps = 0,
     this.satellites = const [],
     this.trackPointCount = 0,
+    this.rmcSpeedMps = 0,
+    this.rmcCourseDeg = 0,
+    this.nmeaSupported = false,
   });
 
   final GnssPhase phase;
@@ -96,6 +100,15 @@ class GnssSnapshot {
   /// Track points buffered for the current trip.
   final int trackPointCount;
 
+  /// Latest raw RMC Doppler speed, m/s (0 = unknown). Android only.
+  final double rmcSpeedMps;
+
+  /// Latest RMC course over ground, degrees.
+  final double rmcCourseDeg;
+
+  /// Whether raw NMEA sentences are available on this platform.
+  final bool nmeaSupported;
+
   GnssSnapshot copyWith({
     GnssPhase? phase,
     bool? hasFix,
@@ -116,6 +129,9 @@ class GnssSnapshot {
     double? avgMovingSpeedMps,
     List<SatelliteInfo>? satellites,
     int? trackPointCount,
+    double? rmcSpeedMps,
+    double? rmcCourseDeg,
+    bool? nmeaSupported,
   }) {
     return GnssSnapshot(
       phase: phase ?? this.phase,
@@ -138,6 +154,9 @@ class GnssSnapshot {
       avgMovingSpeedMps: avgMovingSpeedMps ?? this.avgMovingSpeedMps,
       satellites: satellites ?? this.satellites,
       trackPointCount: trackPointCount ?? this.trackPointCount,
+      rmcSpeedMps: rmcSpeedMps ?? this.rmcSpeedMps,
+      rmcCourseDeg: rmcCourseDeg ?? this.rmcCourseDeg,
+      nmeaSupported: nmeaSupported ?? this.nmeaSupported,
     );
   }
 }
@@ -146,9 +165,13 @@ class GnssSnapshot {
 /// estimate, records trip tracks, and exposes a single [snapshot].
 class GnssService extends ChangeNotifier {
   static const EventChannel _gnssChannel = EventChannel('groundspeed/gnss');
+  static const EventChannel _nmeaChannel = EventChannel('groundspeed/nmea');
 
   /// Reject samples whose reported speed accuracy is worse than this (m/s).
   static const double maxTrustedSpeedAccuracy = 6.0;
+
+  /// While parked, only request fixes after this much movement (m).
+  static const int parkedDistanceFilter = 10;
 
   /// Drop distance/track deltas when horizontal accuracy is worse (m).
   static const double maxDistanceAccuracy = 50.0;
@@ -168,6 +191,12 @@ class GnssService extends ChangeNotifier {
 
   StreamSubscription<Position>? _positionSub;
   StreamSubscription<dynamic>? _satelliteSub;
+  StreamSubscription<dynamic>? _nmeaSub;
+
+  bool _streamThrottled = false;
+  double _rmcSpeedMps = 0;
+  double _rmcCourseDeg = 0;
+  bool _nmeaSupported = false;
 
   GnssSnapshot _snapshot = const GnssSnapshot(phase: GnssPhase.idle);
   GnssSnapshot get snapshot => _snapshot;
@@ -206,6 +235,8 @@ class GnssService extends ChangeNotifier {
 
       _sessionStart ??= DateTime.now();
       _listenSatellites();
+      _listenNmea();
+      _streamThrottled = false;
       await _positionSub?.cancel();
       _positionSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
@@ -286,7 +317,32 @@ class GnssService extends ChangeNotifier {
     return session;
   }
 
-  void _onPosition(Position position) {
+  /// Battery saver: while the stationary gate has us parked, drop to a
+  /// medium-accuracy stream with a distance gate so the GPS radio can doze.
+  /// The estimator's hysteresis already debounces the transitions.
+  Future<void> _syncStreamThrottle() async {
+    final wantThrottled = !_estimator.isMoving;
+    if (wantThrottled == _streamThrottled) return;
+    _streamThrottled = wantThrottled;
+    await _positionSub?.cancel();
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: _streamThrottled
+          ? const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              distanceFilter: parkedDistanceFilter,
+            )
+          : const LocationSettings(
+              accuracy: LocationAccuracy.best,
+              distanceFilter: 0,
+            ),
+    ).listen(
+      _onPosition,
+      onError: (Object _) => _setPhase(GnssPhase.searching),
+      cancelOnError: false,
+    );
+  }
+
+  Future<void> _onPosition(Position position) async {
     final at = position.timestamp;
     final speed = position.speed;
     final speedAcc = position.speedAccuracy;
@@ -379,8 +435,12 @@ class GnssService extends ChangeNotifier {
       altitudeM: alt.isNaN ? 0 : alt,
       verticalSpeedMps: _verticalSpeed,
       trackPointCount: _track.length,
+      rmcSpeedMps: _rmcSpeedMps,
+      rmcCourseDeg: _rmcCourseDeg,
+      nmeaSupported: _nmeaSupported,
     );
     notifyListeners();
+    await _syncStreamThrottle();
   }
 
   void _bufferTrack(Position p) {
@@ -439,6 +499,32 @@ class GnssService extends ChangeNotifier {
     }
   }
 
+  /// Android-only raw NMEA feed; we cross-validate the RMC Doppler speed
+  /// against the fused estimate.
+  void _listenNmea() {
+    try {
+      _nmeaSub?.cancel();
+      _nmeaSub = _nmeaChannel.receiveBroadcastStream().listen(
+        (dynamic event) {
+          if (event is String) {
+            final rmc = parseRmc(event);
+            if (rmc == null) return;
+            _rmcSpeedMps = rmc.speedMps;
+            _rmcCourseDeg = rmc.courseDeg;
+            _nmeaSupported = true;
+            notifyListeners();
+          }
+        },
+        onError: (Object _) {
+          _nmeaSupported = false;
+        },
+        cancelOnError: false,
+      );
+    } on Exception {
+      _nmeaSupported = false;
+    }
+  }
+
   void _setPhase(GnssPhase phase) {
     if (_snapshot.phase == phase) return;
     _snapshot = _snapshot.copyWith(phase: phase);
@@ -455,6 +541,7 @@ class GnssService extends ChangeNotifier {
   void dispose() {
     _positionSub?.cancel();
     _satelliteSub?.cancel();
+    _nmeaSub?.cancel();
     super.dispose();
   }
 }

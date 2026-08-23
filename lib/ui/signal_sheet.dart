@@ -86,6 +86,22 @@ Future<void> showSignalSheet(BuildContext context, GnssService service) {
                       color: GsColors.ink.withValues(alpha: 0.35),
                     ),
                   ),
+                  if (snapshot.nmeaSupported &&
+                      snapshot.rmcSpeedMps > 0 &&
+                      snapshot.speedMps > 0.4)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        'RMC DOPPLER ${snapshot.rmcSpeedMps.toStringAsFixed(2)} m/s · '
+                        'Δ vs fused ${(snapshot.rmcSpeedMps - snapshot.speedMps).abs().toStringAsFixed(2)} m/s',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          letterSpacing: 0.4,
+                          color: GsColors.accent,
+                          fontFeatures: GsColors.tabularFigures,
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),
