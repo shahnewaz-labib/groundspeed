@@ -74,7 +74,7 @@ class _HeadingRingPainter extends CustomPainter {
     }
 
     // Cardinal letters.
-    const labels = {0.0: 'N', 90.0: 'E', 180.0: 'S', 270.0: 'W'};
+    final labels = {0.0: 'N', 90.0: 'E', 180.0: 'S', 270.0: 'W'};
     for (final entry in labels.entries) {
       final deg = entry.key;
       if (!_withinSweep(deg)) continue;
