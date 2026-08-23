@@ -71,7 +71,7 @@ class TripDetailScreen extends StatelessWidget {
               text: 'Could not read this trip.\n${error ?? ''}',
             );
           }
-          return _TripBody(points: snapshot.data!, unit: unit);
+          return _TripBody(points: snapshot.data!, session: session, unit: unit);
         },
       ),
     );
@@ -86,9 +86,14 @@ class TripDetailScreen extends StatelessWidget {
 }
 
 class _TripBody extends StatelessWidget {
-  const _TripBody({required this.points, required this.unit});
+  const _TripBody({
+    required this.points,
+    required this.session,
+    required this.unit,
+  });
 
   final List<TrackPoint> points;
+  final StoredSession session;
   final SpeedUnit unit;
 
   @override
