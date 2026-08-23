@@ -204,7 +204,7 @@ class GnssService extends ChangeNotifier {
         return;
       }
 
-      if (_sessionStart == null) _sessionStart = DateTime.now();
+      _sessionStart ??= DateTime.now();
       _listenSatellites();
       await _positionSub?.cancel();
       _positionSub = Geolocator.getPositionStream(
