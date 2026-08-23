@@ -77,13 +77,17 @@ class _StatusPillState extends State<StatusPill>
             ),
           ),
           const SizedBox(width: 9),
-          Text(
-            widget.label,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.4,
-              color: GsColors.inkDim,
+          Flexible(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.4,
+                color: GsColors.inkDim,
+              ),
             ),
           ),
         ],
