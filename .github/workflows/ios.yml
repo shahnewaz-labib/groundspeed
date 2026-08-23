@@ -1,0 +1,46 @@
+name: iOS build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    name: Unsigned iOS IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Scaffold platform projects (generated in CI, never locally)
+        run: flutter create . --platforms ios --org com.shahnewaz --project-name groundspeed
+
+      - name: Inject location usage description
+        run: |
+          /usr/libexec/PlistBuddy -c \
+            "Add :NSLocationWhenInUseUsageDescription string Groundspeed uses GNSS to measure your speed." \
+            ios/Runner/Info.plist || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build iOS (unsigned)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
+          zip -qry groundspeed-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: groundspeed-ios-unsigned
+          path: groundspeed-unsigned.ipa
+          if-no-files-found: error
