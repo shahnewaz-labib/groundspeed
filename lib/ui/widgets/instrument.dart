@@ -99,11 +99,15 @@ class SpeedReadout extends StatelessWidget {
     required this.text,
     required this.unitLabel,
     required this.ready,
+    this.fontSize,
   });
 
   final String text;
   final String unitLabel;
   final bool ready;
+
+  /// Overrides automatic sizing (used when the heading ring constrains us).
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +119,7 @@ class SpeedReadout extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-              fontSize: math.min(
+              fontSize: fontSize ?? math.min(
                 MediaQuery.sizeOf(context).shortestSide * 0.42,
                 172,
               ),
@@ -239,78 +243,6 @@ class _SparklinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_SparklinePainter oldDelegate) =>
       !identical(oldDelegate.samples, samples);
-}
-
-/// Bottom row of session statistics.
-class StatTiles extends StatelessWidget {
-  const StatTiles({
-    super.key,
-    required this.maxText,
-    required this.distanceText,
-    required this.satellitesText,
-  });
-
-  final String maxText;
-  final String distanceText;
-  final String satellitesText;
-
-  @override
-  Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _tile('MAX', maxText)),
-          const _Divider(),
-          Expanded(child: _tile('DIST', distanceText)),
-          const _Divider(),
-          Expanded(child: _tile('SATS', satellitesText)),
-        ],
-      ),
-    );
-  }
-
-  Widget _tile(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 2.2,
-              color: GsColors.inkFaint,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.fade,
-            style: TextStyle(
-              fontSize: value.length > 8 ? 15 : 19,
-              fontWeight: FontWeight.w500,
-              color: GsColors.ink,
-              fontFeatures: GsColors.tabularFigures,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 1, color: GsColors.hairline);
-  }
 }
 
 /// Underlined segmented control for switching display units.

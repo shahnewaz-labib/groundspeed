@@ -38,10 +38,26 @@ class MainActivity : FlutterActivity() {
                         override fun onSatelliteStatusChanged(status: GnssStatus) {
                             val total = status.satelliteCount
                             var used = 0
+                            val sats = ArrayList<Map<String, Any>>(total)
                             for (i in 0 until total) {
-                                if (status.usedInFix(i)) used++
+                                val inFix = status.usedInFix(i)
+                                if (inFix) used++
+                                sats.add(
+                                    mapOf(
+                                        "id" to status.getSvid(i),
+                                        "c" to constellationName(status.getConstellationType(i)),
+                                        "az" to status.getAzimuthDegrees(i),
+                                        "el" to status.getElevationDegrees(i),
+                                        "snr" to status.getCn0DbHz(i),
+                                        "u" to inFix,
+                                    )
+                                )
                             }
-                            val payload = mapOf("used" to used, "total" to total)
+                            val payload = mapOf(
+                                "used" to used,
+                                "total" to total,
+                                "sats" to sats,
+                            )
                             mainHandler.post { events.success(payload) }
                         }
                     }
@@ -58,6 +74,17 @@ class MainActivity : FlutterActivity() {
                     unregister()
                 }
             })
+    }
+
+    private fun constellationName(type: Int): String = when (type) {
+        GnssStatus.CONSTELLATION_GPS -> "GPS"
+        GnssStatus.CONSTELLATION_GLONASS -> "GLONASS"
+        GnssStatus.CONSTELLATION_GALILEO -> "GALILEO"
+        GnssStatus.CONSTELLATION_BEIDOU -> "BEIDOU"
+        GnssStatus.CONSTELLATION_QZSS -> "QZSS"
+        GnssStatus.CONSTELLATION_SBAS -> "SBAS"
+        GnssStatus.CONSTELLATION_IRNSS -> "NAVIC"
+        else -> "UNKNOWN"
     }
 
     private fun unregister() {

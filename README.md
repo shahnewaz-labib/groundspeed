@@ -11,20 +11,31 @@ satellite telemetry (Android GNSS status channel).
 
 | Workflow | Trigger | Output |
 | --- | --- | --- |
-| `CI` | push to `main`, PRs, manual | analyze + tests + **release APK** artifact |
+| `CI` | push to `main`, PRs, manual | analyze + tests + release APK artifact |
 | `iOS build` | manual (`workflow_dispatch`) | unsigned `.ipa` (re-sign / sideload yourself) |
+| `Release` | push a `v*` tag | version-stamped universal + per-ABI APKs → GitHub Release |
 
 Platform folders (`android/`, `ios/` scaffolding) are generated in CI via
 `flutter create`; only hand-written sources live in the repo.
+Releases stamp the tag into `versionName` (`v0.2.0` → `0.2.0+<run>`).
 
 ## Install on your phone
 
-1. Open the latest green **CI** run → Artifacts → `groundspeed-android`
-2. Sideload the APK (or `gh run download -n groundspeed-android`)
+1. Open **Releases** → latest
+2. Sideload the **arm64-v8a** APK (any phone from ~2016 onward), or the
+   **universal** APK if unsure
 3. Grant precise location, stand under open sky
 
-iOS: dispatch the **iOS build** workflow, download `groundspeed-ios-unsigned`,
-then sign/sideload (AltStore, Sideloadly, or Xcode).
+## Features
+
+- Kalman-filtered speed with innovation-adaptive process noise
+- Stationary gate (asymmetric hysteresis) pinning parked readings to 0.0
+- Heading ring around the readout while in motion
+- Satellite sky-view radar by constellation (GPS/GLONASS/Galileo/BeiDou/…)
+- Six session stats: max · distance · moving time · avg moving · elevation · climb rate
+- Trip saving as GPX (share into Strava/Komoot/Files), local trip history
+- Haptic tick whenever your session top speed climbs
+- KM/H · MPH · KN units, persisted; imperial shows ft / fpm
 
 ## Precision notes
 
@@ -39,6 +50,8 @@ then sign/sideload (AltStore, Sideloadly, or Xcode).
   so single-sample multipath spikes never register
 - Distance only accumulates while in motion — parked GPS drift can't fake
   meters
+- Process noise adapts to the innovation signal: smooth cruise gets
+  smoother, hard acceleration stays responsive
 - Distance uses haversine deltas gated by horizontal accuracy (< 50 m) and
   sane time deltas (< 30 s) to kill teleport artifacts
 - Digits use tabular figures so the readout never jitters horizontally

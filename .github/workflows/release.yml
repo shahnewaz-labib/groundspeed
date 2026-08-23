@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Stamp version from tag
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          sed -i -E "s/^version:.*$/version: ${VER}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
+          echo "Building version $(grep '^version:' pubspec.yaml)"
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -47,31 +53,39 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "cn=Android Debug,o=Android,c=US"
 
-      - name: Build release APK
+      - name: Build universal release APK
         run: flutter build apk --release
 
-      - name: Collect artifacts + checksum
+      - name: Build per-ABI release APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Collect artifacts + checksums
         run: |
           TAG="${GITHUB_REF_NAME}"
-          cp build/app/outputs/flutter-apk/app-release.apk "groundspeed-${TAG}.apk"
-          shasum -a 256 "groundspeed-${TAG}.apk" > "groundspeed-${TAG}.apk.sha256"
-          echo "Built $(cat "groundspeed-${TAG}.apk.sha256")"
+          cp build/app/outputs/flutter-apk/app-release.apk "groundspeed-${TAG}-universal.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "groundspeed-${TAG}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "groundspeed-${TAG}-armeabi-v7a.apk"
+          shasum -a 256 "groundspeed-${TAG}-universal.apk" > "groundspeed-${TAG}-universal.apk.sha256"
+          shasum -a 256 "groundspeed-${TAG}-arm64-v8a.apk" > "groundspeed-${TAG}-arm64-v8a.apk.sha256"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          APK="groundspeed-${TAG}.apk"
-          SUM="${APK}.sha256"
+          UNI="groundspeed-${TAG}-universal.apk"
+          ARM="groundspeed-${TAG}-arm64-v8a.apk"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" "$SUM" --clobber
+            gh release upload "$TAG" "$UNI"* "$ARM"* "groundspeed-${TAG}-armeabi-v7a.apk" --clobber
           else
-            gh release create "$TAG" "$APK" "$SUM" \
+            gh release create "$TAG" \
+              "$ARM" "${ARM}.sha256" \
+              "$UNI" "${UNI}.sha256" \
+              "groundspeed-${TAG}-armeabi-v7a.apk" \
               --title "Groundspeed $TAG" \
               --notes "Precision GNSS ground-speed instrument.
 
-              **Install:** sideload \`$APK\`, grant precise location, stand under open sky.
-              Verify integrity with \`$SUM\` (SHA-256).
+              **Install:** sideload \`$ARM\` (any phone from ~2016 onward; smaller download) or \`$UNI\` if unsure.
+              Verify integrity with the \`.sha256\` files.
               Built by GitHub Actions from tag \`$TAG\`."
           fi

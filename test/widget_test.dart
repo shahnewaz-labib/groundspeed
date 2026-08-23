@@ -50,7 +50,10 @@ void main() {
     expect(find.text('KM/H'), findsNWidgets(2));
     expect(find.text('MAX'), findsOneWidget);
     expect(find.text('DIST'), findsOneWidget);
-    expect(find.text('SATS'), findsOneWidget);
+    expect(find.text('MOVE'), findsOneWidget);
+    expect(find.text('AVG'), findsOneWidget);
+    expect(find.text('ELEV'), findsOneWidget);
+    expect(find.text('V/S'), findsOneWidget);
     expect(find.text('1.24 km'), findsOneWidget);
     expect(find.text('LOCKED · ±3.2 m · 9 SV'), findsOneWidget);
   });

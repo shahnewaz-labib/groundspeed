@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'ground_speed_estimator.dart';
+import 'models.dart';
 import 'speed_filter.dart';
 
 /// High-level connection state surfaced to the UI.
@@ -34,6 +35,13 @@ class GnssSnapshot {
     this.distanceM = 0,
     this.maxSpeedMps = 0,
     this.history = const [],
+    this.headingDeg = 0,
+    this.altitudeM = 0,
+    this.verticalSpeedMps = 0,
+    this.moveSeconds = 0,
+    this.avgMovingSpeedMps = 0,
+    this.satellites = const [],
+    this.trackPointCount = 0,
   });
 
   final GnssPhase phase;
@@ -67,6 +75,27 @@ class GnssSnapshot {
   /// Rolling window of recent filtered speeds (m/s), oldest first.
   final List<double> history;
 
+  /// Course over ground in degrees [0, 360).
+  final double headingDeg;
+
+  /// Latest reported altitude, m.
+  final double altitudeM;
+
+  /// Smoothed climb rate, m/s (positive = up).
+  final double verticalSpeedMps;
+
+  /// Seconds accumulated while in motion.
+  final double moveSeconds;
+
+  /// Space-derived average while moving, m/s.
+  final double avgMovingSpeedMps;
+
+  /// Per-satellite telemetry (Android only).
+  final List<SatelliteInfo> satellites;
+
+  /// Track points buffered for the current trip.
+  final int trackPointCount;
+
   GnssSnapshot copyWith({
     GnssPhase? phase,
     bool? hasFix,
@@ -80,6 +109,13 @@ class GnssSnapshot {
     double? distanceM,
     double? maxSpeedMps,
     List<double>? history,
+    double? headingDeg,
+    double? altitudeM,
+    double? verticalSpeedMps,
+    double? moveSeconds,
+    double? avgMovingSpeedMps,
+    List<SatelliteInfo>? satellites,
+    int? trackPointCount,
   }) {
     return GnssSnapshot(
       phase: phase ?? this.phase,
@@ -95,23 +131,26 @@ class GnssSnapshot {
       distanceM: distanceM ?? this.distanceM,
       maxSpeedMps: maxSpeedMps ?? this.maxSpeedMps,
       history: history ?? this.history,
+      headingDeg: headingDeg ?? this.headingDeg,
+      altitudeM: altitudeM ?? this.altitudeM,
+      verticalSpeedMps: verticalSpeedMps ?? this.verticalSpeedMps,
+      moveSeconds: moveSeconds ?? this.moveSeconds,
+      avgMovingSpeedMps: avgMovingSpeedMps ?? this.avgMovingSpeedMps,
+      satellites: satellites ?? this.satellites,
+      trackPointCount: trackPointCount ?? this.trackPointCount,
     );
   }
 }
 
 /// Streams GNSS fixes, fuses them into a high-precision ground speed
-/// estimate, and exposes a single [snapshot] for the UI.
-///
-/// The platform folders are generated in CI; on iOS there is no public
-/// satellite-telemetry API, so [satelliteMonitorSupported] degrades to false
-/// there and everything else keeps working.
+/// estimate, records trip tracks, and exposes a single [snapshot].
 class GnssService extends ChangeNotifier {
   static const EventChannel _gnssChannel = EventChannel('groundspeed/gnss');
 
   /// Reject samples whose reported speed accuracy is worse than this (m/s).
   static const double maxTrustedSpeedAccuracy = 6.0;
 
-  /// Drop distance deltas when horizontal accuracy is worse than this (m).
+  /// Drop distance/track deltas when horizontal accuracy is worse (m).
   static const double maxDistanceAccuracy = 50.0;
 
   /// Ignore distance jumps that imply impossible motion between fixes.
@@ -119,6 +158,9 @@ class GnssService extends ChangeNotifier {
 
   /// Number of samples kept for the trace sparkline.
   static const int historyWindow = 90;
+
+  /// Hard cap on buffered track points (ring-buffer behaviour).
+  static const int _maxTrackPoints = 8000;
 
   GnssService();
 
@@ -132,8 +174,16 @@ class GnssService extends ChangeNotifier {
 
   double _distance = 0;
   double _maxSpeed = 0;
+  double _moveSeconds = 0;
+  DateTime? _sessionStart;
   final List<double> _history = <double>[];
   Position? _lastAccepted;
+
+  double _verticalSpeed = 0;
+  double? _lastAltitude;
+  DateTime? _lastAltitudeAt;
+
+  final List<TrackPoint> _track = <TrackPoint>[];
 
   Future<void> start() async {
     try {
@@ -154,6 +204,7 @@ class GnssService extends ChangeNotifier {
         return;
       }
 
+      if (_sessionStart == null) _sessionStart = DateTime.now();
       _listenSatellites();
       await _positionSub?.cancel();
       _positionSub = Geolocator.getPositionStream(
@@ -176,17 +227,63 @@ class GnssService extends ChangeNotifier {
   Future<void> restart() async {
     await _positionSub?.cancel();
     _positionSub = null;
+    resetSession();
+    await start();
+  }
+
+  /// Clears trip counters without touching the estimator's motion state.
+  void resetSession() {
     _estimator.reset();
     _distance = 0;
     _maxSpeed = 0;
+    _moveSeconds = 0;
     _lastAccepted = null;
     _history.clear();
+    _track.clear();
+    _verticalSpeed = 0;
+    _lastAltitude = null;
+    _lastAltitudeAt = null;
+    _sessionStart = DateTime.now();
     _snapshot = GnssSnapshot(
       phase: _snapshot.phase,
       satelliteMonitorSupported: _snapshot.satelliteMonitorSupported,
     );
     notifyListeners();
-    await start();
+  }
+
+  /// Snapshots the current trip for export and resets its counters.
+  ///
+  /// Motion state is preserved so an ongoing ride doesn't need to re-wake
+  /// the stationary gate.
+  SessionTrack collectSession() {
+    final now = DateTime.now();
+    final session = SessionTrack(
+      name: 'Groundspeed '
+          '${now.year}-${_two(now.month)}-${_two(now.day)} '
+          '${_two(now.hour)}:${_two(now.minute)}',
+      startedAt: _sessionStart ?? now,
+      endedAt: now,
+      distanceM: _distance,
+      moveSeconds: _moveSeconds,
+      maxSpeedMps: _maxSpeed,
+      points: List<TrackPoint>.unmodifiable(_track),
+    );
+    _distance = 0;
+    _maxSpeed = 0;
+    _moveSeconds = 0;
+    _history.clear();
+    _track.clear();
+    _sessionStart = now;
+    _snapshot = _snapshot.copyWith(
+      distanceM: 0,
+      maxSpeedMps: 0,
+      moveSeconds: 0,
+      avgMovingSpeedMps: 0,
+      history: const [],
+      trackPointCount: 0,
+    );
+    notifyListeners();
+    return session;
   }
 
   void _onPosition(Position position) {
@@ -206,10 +303,8 @@ class GnssService extends ChangeNotifier {
         speedAccuracy: speedAcc,
         at: at,
       );
-      if (_estimator.isMoving && filtered > _maxSpeed) {
-        _maxSpeed = filtered;
-      }
       if (_estimator.isMoving) {
+        if (filtered > _maxSpeed) _maxSpeed = filtered;
         _history.add(filtered);
         while (_history.length > historyWindow) {
           _history.removeAt(0);
@@ -217,27 +312,56 @@ class GnssService extends ChangeNotifier {
       }
     }
 
-    // Distance: only while the estimator believes we're moving (kills
-    // parked-drift), and gate by fix quality + plausibility to reject jumps.
+    // Fix-quality gate shared by distance, track recording, altitude.
+    final qualityOk = !position.accuracy.isNaN &&
+        position.accuracy <= maxDistanceAccuracy;
+
     final last = _lastAccepted;
     final dtSec = last == null
         ? null
         : at.difference(last.timestamp).inMilliseconds / 1000.0;
     final deltaOk = dtSec != null && dtSec > 0 && dtSec < 30;
-    if (_estimator.isMoving && position.accuracy <= maxDistanceAccuracy) {
-      if (last != null && deltaOk) {
-        final d = haversineMeters(
-          last.latitude,
-          last.longitude,
-          position.latitude,
-          position.longitude,
-        );
-        if (d <= maxPlausibleDeltaMeters) {
-          _distance += d;
+
+    if (qualityOk) {
+      if (_estimator.isMoving) {
+        if (deltaOk && last != null) {
+          final d = haversineMeters(
+            last.latitude,
+            last.longitude,
+            position.latitude,
+            position.longitude,
+          );
+          if (d <= maxPlausibleDeltaMeters) {
+            _distance += d;
+            _moveSeconds += dtSec.clamp(0, 5);
+          }
         }
+        _bufferTrack(position);
       }
       _lastAccepted = position;
     }
+
+    // Vertical speed: EMA over gated altitude deltas (works even parked).
+    final alt = position.altitude;
+    if (qualityOk && !alt.isNaN) {
+      final lastAlt = _lastAltitude;
+      final lastAt = _lastAltitudeAt;
+      if (lastAlt != null && lastAt != null) {
+        final adt = at.difference(lastAt).inMilliseconds / 1000.0;
+        if (adt > 0.2 && adt < 5) {
+          final rawVs = (alt - lastAlt) / adt;
+          if (rawVs.abs() < 30) {
+            _verticalSpeed =
+                _verticalSpeed + 0.22 * (rawVs - _verticalSpeed);
+          }
+        }
+      }
+      _lastAltitude = alt;
+      _lastAltitudeAt = at;
+    }
+
+    final avgMoving =
+        _moveSeconds > 0 ? _distance / _moveSeconds : 0.0;
 
     _snapshot = _snapshot.copyWith(
       phase: GnssPhase.locked,
@@ -248,10 +372,38 @@ class GnssService extends ChangeNotifier {
       speedAccuracyM: speedAcc.isNaN ? 0 : (speedAcc < 0 ? 0 : speedAcc),
       distanceM: _distance,
       maxSpeedMps: _maxSpeed,
+      moveSeconds: _moveSeconds,
+      avgMovingSpeedMps: avgMoving,
       history: List<double>.unmodifiable(_history),
+      headingDeg: _normalizeHeading(position.heading),
+      altitudeM: alt.isNaN ? 0 : alt,
+      verticalSpeedMps: _verticalSpeed,
+      trackPointCount: _track.length,
     );
     notifyListeners();
   }
+
+  void _bufferTrack(Position p) {
+    _track.add(
+      TrackPoint(
+        latitude: p.latitude,
+        longitude: p.longitude,
+        altitudeM: p.altitude.isNaN ? 0 : p.altitude,
+        timestamp: p.timestamp,
+      ),
+    );
+    if (_track.length > _maxTrackPoints) {
+      _track.removeRange(0, _track.length - _maxTrackPoints);
+    }
+  }
+
+  double _normalizeHeading(double h) {
+    if (h.isNaN || h < 0) return 0;
+    final normalized = h % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+  }
+
+  String _two(int v) => v.toString().padLeft(2, '0');
 
   /// Android-only GNSS constellation telemetry via platform channel.
   void _listenSatellites() {
@@ -262,22 +414,21 @@ class GnssService extends ChangeNotifier {
           if (event is Map) {
             final used = (event['used'] as num?)?.toInt() ?? 0;
             final total = (event['total'] as num?)?.toInt() ?? 0;
-            if (used == _snapshot.satsUsed &&
-                total == _snapshot.satsTotal &&
-                _snapshot.satelliteMonitorSupported) {
-              return;
-            }
+            final rawSats = event['sats'];
+            final sats = rawSats is List
+                ? rawSats.map(SatelliteInfo.fromMap).toList()
+                : <SatelliteInfo>[];
             _snapshot = _snapshot.copyWith(
               satsUsed: used,
               satsTotal: total,
+              satellites: sats,
               satelliteMonitorSupported: true,
             );
             notifyListeners();
           }
         },
         onError: (Object _) {
-          _snapshot =
-              _snapshot.copyWith(satelliteMonitorSupported: false);
+          _snapshot = _snapshot.copyWith(satelliteMonitorSupported: false);
         },
         cancelOnError: false,
       );
