@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'ground_speed_estimator.dart';
 import 'speed_filter.dart';
 
 /// High-level connection state surfaced to the UI.
@@ -121,7 +122,7 @@ class GnssService extends ChangeNotifier {
 
   GnssService();
 
-  final SpeedFilter _filter = SpeedFilter();
+  final GroundSpeedEstimator _estimator = GroundSpeedEstimator();
 
   StreamSubscription<Position>? _positionSub;
   StreamSubscription<dynamic>? _satelliteSub;
@@ -175,7 +176,7 @@ class GnssService extends ChangeNotifier {
   Future<void> restart() async {
     await _positionSub?.cancel();
     _positionSub = null;
-    _filter.reset();
+    _estimator.reset();
     _distance = 0;
     _maxSpeed = 0;
     _lastAccepted = null;
@@ -200,12 +201,15 @@ class GnssService extends ChangeNotifier {
         speedAcc <= maxTrustedSpeedAccuracy;
 
     if (speedUsable) {
-      final filtered =
-          _filter.update(rawSpeed: speed, speedAccuracy: speedAcc, at: at);
-      if (filtered != null && filtered > _maxSpeed) {
+      final filtered = _estimator.update(
+        rawSpeed: speed,
+        speedAccuracy: speedAcc,
+        at: at,
+      );
+      if (_estimator.isMoving && filtered > _maxSpeed) {
         _maxSpeed = filtered;
       }
-      if (filtered != null) {
+      if (_estimator.isMoving) {
         _history.add(filtered);
         while (_history.length > historyWindow) {
           _history.removeAt(0);
@@ -213,13 +217,14 @@ class GnssService extends ChangeNotifier {
       }
     }
 
-    // Distance: gate by fix quality and plausibility to reject jumps.
+    // Distance: only while the estimator believes we're moving (kills
+    // parked-drift), and gate by fix quality + plausibility to reject jumps.
     final last = _lastAccepted;
     final dtSec = last == null
         ? null
         : at.difference(last.timestamp).inMilliseconds / 1000.0;
     final deltaOk = dtSec != null && dtSec > 0 && dtSec < 30;
-    if (position.accuracy <= maxDistanceAccuracy) {
+    if (_estimator.isMoving && position.accuracy <= maxDistanceAccuracy) {
       if (last != null && deltaOk) {
         final d = haversineMeters(
           last.latitude,
@@ -237,7 +242,7 @@ class GnssService extends ChangeNotifier {
     _snapshot = _snapshot.copyWith(
       phase: GnssPhase.locked,
       hasFix: true,
-      speedMps: _filter.primed ? _filter.value : 0,
+      speedMps: _estimator.value,
       rawSpeedMps: speed.isNaN ? 0 : (speed < 0 ? 0 : speed),
       accuracyM: position.accuracy.isNaN ? 0 : position.accuracy,
       speedAccuracyM: speedAcc.isNaN ? 0 : (speedAcc < 0 ? 0 : speedAcc),

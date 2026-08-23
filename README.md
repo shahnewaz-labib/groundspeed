@@ -33,6 +33,12 @@ then sign/sideload (AltStore, Sideloadly, or Xcode).
 - Accepted speeds pass through a scalar Kalman filter
   (process noise from an acceleration model, measurement noise from the
   receiver-reported speed accuracy)
+- A stationary gate with asymmetric hysteresis pins the readout to exactly
+  0 while parked (receivers never report a clean zero): below ~0.25 m/s it
+  sleeps quickly; waking requires ~3 s sustained motion above ~0.55 m/s,
+  so single-sample multipath spikes never register
+- Distance only accumulates while in motion — parked GPS drift can't fake
+  meters
 - Distance uses haversine deltas gated by horizontal accuracy (< 50 m) and
   sane time deltas (< 30 s) to kill teleport artifacts
 - Digits use tabular figures so the readout never jitters horizontally
